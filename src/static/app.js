@@ -384,18 +384,24 @@ class ChatClient {
         
         for (const file of files) {
             try {
-                const result = await this._uploadSingleFile(file);
+                const result = await this._uploadSingleFileWebSocket(file);
                 results.push(result);
             } catch (error) {
-                console.error('Upload failed for', file.name, error);
-                // Continue with other files even if one fails
+                console.error('WebSocket upload failed, trying HTTP fallback:', error);
+                try {
+                    const result = await this._uploadSingleFileHTTP(file);
+                    results.push(result);
+                } catch (httpError) {
+                    console.error('HTTP upload also failed:', httpError);
+                    throw httpError;
+                }
             }
         }
         
         return results;
     }
     
-    _uploadSingleFile(file) {
+    _uploadSingleFileWebSocket(file) {
         return new Promise((resolve, reject) => {
             const uploadId = this._generateUploadId();
             
@@ -406,9 +412,8 @@ class ChatClient {
             const reader = new FileReader();
             
             reader.onload = (e) => {
-                const base64 = e.target.result.split(',')[1]; // Remove data URL prefix
+                const base64 = e.target.result.split(',')[1];
                 
-                // Send upload request via WebSocket
                 if (this.ws && this.connected) {
                     this.ws.send(JSON.stringify({
                         type: 'upload',
@@ -426,6 +431,28 @@ class ChatClient {
             reader.onerror = () => reject(new Error('Failed to read file'));
             reader.readAsDataURL(file);
         });
+    }
+    
+    async _uploadSingleFileHTTP(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error('Upload failed: ' + response.status);
+        }
+        
+        const result = await response.json();
+        return {
+            name: file.name,
+            path: result.files[0] || '/uploads/' + file.name,
+            type: file.type,
+            size: file.size
+        };
     }
 
     async sendMessage() {
