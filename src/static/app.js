@@ -3,6 +3,7 @@
  * 
  * Handles WebSocket connection to the agent and UI interactions.
  * Supports streaming responses with incremental rendering.
+ * Supports file uploads to nanobot via WebSocket.
  */
 
 class ChatClient {
@@ -41,6 +42,10 @@ class ChatClient {
         
         // Streaming state - tracks current streaming message per sender
         this._streamingMessages = {}; // sender_id -> { element, content }
+        
+        // Upload state
+        this._uploadCallbacks = {}; // upload_id -> { resolve, reject }
+        this._uploadingCount = 0;
 
         // Initialize
         this.bindEvents();
@@ -119,7 +124,14 @@ class ChatClient {
 
     updateSendButton() {
         const hasContent = this.elements.messageInput.value.trim() || this.pendingFiles.length > 0;
-        this.elements.sendBtn.disabled = !hasContent || !this.connected;
+        this.elements.sendBtn.disabled = !hasContent || !this.connected || this._uploadingCount > 0;
+        
+        // Update button text if uploading
+        if (this._uploadingCount > 0) {
+            this.elements.sendBtn.textContent = `⏳ Uploading...`;
+        } else {
+            this.elements.sendBtn.textContent = '';
+        }
     }
 
     setStatus(status, text) {
@@ -206,6 +218,21 @@ class ChatClient {
                         // Non-streaming message
                         this.addMessage(msg.content, 'agent', msg.media);
                     }
+                    break;
+
+                case 'tool_hint':
+                    // Tool hint (e.g., "web_search("query")") being executed
+                    this._showToolHint(msg.content);
+                    break;
+
+                case 'upload_success':
+                    // File uploaded successfully, resolve the callback
+                    this._handleUploadSuccess(msg);
+                    break;
+
+                case 'upload_error':
+                    // File upload failed, reject the callback
+                    this._handleUploadError(msg);
                     break;
 
                 case 'error':
@@ -318,6 +345,113 @@ class ChatClient {
         delete this._streamingMessages[chatId];
         this.scrollToBottom();
     }
+    
+    _showToolHint(hint) {
+        // Remove existing tool hint if any
+        const existingHint = document.getElementById('tool-hint');
+        if (existingHint) existingHint.remove();
+        
+        // Create tool hint element
+        const hintEl = document.createElement('div');
+        hintEl.id = 'tool-hint';
+        hintEl.className = 'tool-hint';
+        hintEl.innerHTML = `
+            <span class="tool-hint-icon">⚙️</span>
+            <span class="tool-hint-text">${this.escapeHtml(hint)}</span>
+        `;
+        
+        this.elements.messages.appendChild(hintEl);
+        this.scrollToBottom();
+        
+        // Auto-remove after 5 seconds if not updated
+        setTimeout(() => {
+            const el = document.getElementById('tool-hint');
+            if (el && el.querySelector('.tool-hint-text').textContent === hint) {
+                el.remove();
+            }
+        }, 5000);
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ========== Upload Methods ==========
+    
+    _generateUploadId() {
+        return 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    _handleUploadSuccess(msg) {
+        const callback = this._uploadCallbacks[msg.upload_id];
+        if (callback) {
+            callback.resolve(msg);
+            delete this._uploadCallbacks[msg.upload_id];
+        }
+    }
+    
+    _handleUploadError(msg) {
+        const callback = this._uploadCallbacks[msg.upload_id];
+        if (callback) {
+            callback.reject(new Error(msg.error || 'Upload failed'));
+            delete this._uploadCallbacks[msg.upload_id];
+        }
+    }
+    
+    /**
+     * Upload files to nanobot via WebSocket
+     * Returns array of { name, path, type } for each uploaded file
+     */
+    async uploadFilesToNanobot(files) {
+        const results = [];
+        
+        for (const file of files) {
+            try {
+                const result = await this._uploadSingleFile(file);
+                results.push(result);
+            } catch (error) {
+                console.error('Upload failed for', file.name, error);
+                // Continue with other files even if one fails
+            }
+        }
+        
+        return results;
+    }
+    
+    _uploadSingleFile(file) {
+        return new Promise((resolve, reject) => {
+            const uploadId = this._generateUploadId();
+            
+            // Store callback for response
+            this._uploadCallbacks[uploadId] = { resolve, reject };
+            
+            // Read file as base64
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const base64 = e.target.result.split(',')[1]; // Remove data URL prefix
+                
+                // Send upload request via WebSocket
+                if (this.ws && this.connected) {
+                    this.ws.send(JSON.stringify({
+                        type: 'upload',
+                        upload_id: uploadId,
+                        name: file.name,
+                        type: file.type,
+                        size: file.size,
+                        data: base64
+                    }));
+                } else {
+                    reject(new Error('Not connected'));
+                }
+            };
+            
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    }
 
     async sendMessage() {
         const content = this.elements.messageInput.value.trim();
@@ -325,60 +459,64 @@ class ChatClient {
         if (!content && this.pendingFiles.length === 0) return;
         if (!this.connected) return;
 
-        // Handle file uploads first if any
-        let media = [];
+        // Disable send button during upload
+        this._uploadingCount = this.pendingFiles.length;
+        this.updateSendButton();
+        
+        // Show typing indicator if we have files
         if (this.pendingFiles.length > 0) {
-            media = await this.uploadFiles();
+            this.showTyping();
         }
 
-        // Build message
+        // Handle file uploads to nanobot via WebSocket
+        let media = [];
+        if (this.pendingFiles.length > 0) {
+            try {
+                media = await this.uploadFilesToNanobot(this.pendingFiles);
+            } catch (error) {
+                console.error('Upload failed:', error);
+                this.hideTyping();
+                this._uploadingCount = 0;
+                this.updateSendButton();
+                this.addMessage('Failed to upload file(s). Please try again.', 'agent');
+                return;
+            }
+        }
+
+        this.hideTyping();
+
+        // Build message with media paths from nanobot
         const message = {
             type: 'message',
             content: content,
-            sender_id: this.apiKey, // Use full API key as sender ID
-            media: media,
+            sender_id: this.apiKey,
+            media: media.map(m => m.path), // Use paths from nanobot
             metadata: {
                 timestamp: Date.now()
             }
         };
 
-        // Add to chat
-        this.addMessage(content, 'user', media);
+        // Add to chat (show with local preview URLs)
+        const localMedia = this.pendingFiles.map((file, i) => {
+            if (file.type.startsWith('image/')) {
+                return URL.createObjectURL(file);
+            }
+            return null;
+        }).filter(Boolean);
+        
+        this.addMessage(content, 'user', localMedia);
 
         // Clear input
         this.elements.messageInput.value = '';
         this.clearFilePreview();
+        
+        this._uploadingCount = 0;
         this.updateSendButton();
 
         // Send via WebSocket
         if (this.ws && this.connected) {
             this.ws.send(JSON.stringify(message));
         }
-    }
-
-    async uploadFiles() {
-        const uploadedUrls = [];
-
-        for (const file of this.pendingFiles) {
-            try {
-                const formData = new FormData();
-                formData.append(file.name, file);
-
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    uploadedUrls.push(...result.files);
-                }
-            } catch (error) {
-                console.error('Upload failed:', error);
-            }
-        }
-
-        return uploadedUrls;
     }
 
     handleFileSelect(event) {
@@ -446,10 +584,13 @@ class ChatClient {
         let mediaHtml = '';
         if (media && media.length > 0) {
             mediaHtml = media.map(m => {
-                if (m.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                if (typeof m === 'string' && m.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
                     return `<img src="${m}" alt="attachment">`;
                 }
-                return `<a href="${m}" target="_blank">📎 ${m.split('/').pop()}</a>`;
+                if (typeof m === 'string') {
+                    return `<a href="${m}" target="_blank">📎 ${m.split('/').pop()}</a>`;
+                }
+                return '';
             }).join('');
         }
 
