@@ -2,6 +2,7 @@
  * agent-webbridge — Chat Client
  * 
  * Handles WebSocket connection to the agent and UI interactions.
+ * Supports streaming responses with incremental rendering.
  */
 
 class ChatClient {
@@ -37,6 +38,9 @@ class ChatClient {
         this.pendingFiles = [];
         this.messageQueue = [];
         this.sessionId = null;
+        
+        // Streaming state - tracks current streaming message per sender
+        this._streamingMessages = {}; // sender_id -> { element, content }
 
         // Initialize
         this.bindEvents();
@@ -172,7 +176,7 @@ class ChatClient {
     handleMessage(data) {
         try {
             const msg = JSON.parse(data);
-            console.log('Received:', msg);
+            console.log('Received:', msg.type, msg);
 
             switch (msg.type) {
                 case 'auth_success':
@@ -183,13 +187,31 @@ class ChatClient {
                     this.elements.welcome.classList.add('hidden');
                     break;
 
+                case 'stream_start':
+                    // Streaming begins - create placeholder message
+                    this._startStreamingMessage(msg.chat_id || 'agent');
+                    break;
+
+                case 'chunk':
+                    // Append chunk to streaming message
+                    this._appendToStreamingMessage(msg.chat_id || 'agent', msg.content);
+                    break;
+
                 case 'message':
-                    this.addMessage(msg.content, 'agent', msg.media);
+                    // Final complete message (or non-streaming message)
+                    // If we were streaming, finalize the message
+                    if (this._streamingMessages[msg.chat_id || 'agent']) {
+                        this._finalizeStreamingMessage(msg.chat_id || 'agent', msg.content, msg.media);
+                    } else {
+                        // Non-streaming message
+                        this.addMessage(msg.content, 'agent', msg.media);
+                    }
                     break;
 
                 case 'error':
                     console.error('Server error:', msg.error);
-                    this.addMessage(`Error: ${msg.error}`, 'agent');
+                    // End any active streaming
+                    this._finalizeStreamingMessage('agent', `Error: ${msg.error}`, []);
                     break;
 
                 case 'pong':
@@ -202,6 +224,99 @@ class ChatClient {
         } catch (error) {
             console.error('Failed to parse message:', error);
         }
+    }
+    
+    // ========== Streaming Methods ==========
+    
+    _startStreamingMessage(chatId) {
+        // Remove any existing streaming message for this chat
+        if (this._streamingMessages[chatId]) {
+            this._finalizeStreamingMessage(chatId, '', []);
+        }
+        
+        // Create placeholder message element
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message agent streaming';
+        
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        messageEl.innerHTML = `
+            <div class="message-header">
+                <span class="message-avatar">🤖</span>
+                <span>${this.agentName}</span>
+                <span class="streaming-indicator">●</span>
+            </div>
+            <div class="message-content streaming-content"></div>
+            <div class="message-time">${time}</div>
+        `;
+        
+        this.elements.messages.appendChild(messageEl);
+        this.scrollToBottom();
+        
+        this._streamingMessages[chatId] = {
+            element: messageEl,
+            content: ''
+        };
+    }
+    
+    _appendToStreamingMessage(chatId, chunk) {
+        const stream = this._streamingMessages[chatId];
+        if (!stream) return;
+        
+        stream.content += chunk;
+        
+        // Update the content element
+        const contentEl = stream.element.querySelector('.streaming-content');
+        if (contentEl) {
+            contentEl.innerHTML = this.formatContent(stream.content) + '<span class="cursor">▊</span>';
+        }
+        
+        this.scrollToBottom();
+    }
+    
+    _finalizeStreamingMessage(chatId, finalContent, media = []) {
+        const stream = this._streamingMessages[chatId];
+        if (!stream) {
+            // No streaming in progress, just add the message normally
+            if (finalContent) {
+                this.addMessage(finalContent, 'agent', media);
+            }
+            return;
+        }
+        
+        // Use final content if provided, otherwise use accumulated content
+        const content = finalContent || stream.content;
+        
+        // Remove streaming class and cursor
+        const contentEl = stream.element.querySelector('.streaming-content');
+        if (contentEl) {
+            contentEl.classList.remove('streaming-content');
+            contentEl.innerHTML = this.formatContent(content);
+        }
+        
+        // Remove streaming indicator
+        const indicator = stream.element.querySelector('.streaming-indicator');
+        if (indicator) indicator.remove();
+        
+        stream.element.classList.remove('streaming');
+        
+        // Add media if present
+        if (media && media.length > 0) {
+            const timeEl = stream.element.querySelector('.message-time');
+            if (timeEl) {
+                const mediaHtml = media.map(m => {
+                    if (m.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                        return `<img src="${m}" alt="attachment">`;
+                    }
+                    return `<a href="${m}" target="_blank">📎 ${m.split('/').pop()}</a>`;
+                }).join('');
+                timeEl.insertAdjacentHTML('beforebegin', mediaHtml);
+            }
+        }
+        
+        // Clean up
+        delete this._streamingMessages[chatId];
+        this.scrollToBottom();
     }
 
     async sendMessage() {

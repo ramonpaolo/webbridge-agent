@@ -5,7 +5,7 @@ This FastAPI app serves as a bridge between a web browser and the agent's
 webbridge channel. It handles:
 - Serving the static web UI
 - WebSocket connections from browsers
-- Proxying messages to/from the agent via WebSocket
+- Proxying messages to/from the agent via WebSocket with streaming support
 """
 
 import asyncio
@@ -45,7 +45,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 connected_browsers: dict[str, list[WebSocket]] = {}
 
 # Initialize FastAPI
-app = FastAPI(title="agent-webbridge", version="1.0.0")
+app = FastAPI(title="agent-webbridge", version="1.1.0")
 
 # Configure CORS
 app.add_middleware(
@@ -118,6 +118,8 @@ async def health():
         "status": "ok",
         "agent_connected": False,  # Would need to track this
         "agent_name": AGENT_NAME,
+        "version": "1.1.0",
+        "streaming": True,
     }
 
 
@@ -130,7 +132,12 @@ async def websocket_endpoint(websocket: WebSocket):
     1. Browser connects
     2. Browser sends auth message: {"type": "auth", "api_key": "..."}
     3. Server validates and connects to agent WebSocket
-    4. Messages are proxied bidirectionally
+    4. Messages are proxied bidirectionally (with streaming support)
+    
+    Streaming message types from agent:
+    - "stream_start": Streaming is beginning
+    - "chunk": A partial content chunk
+    - "message": Final complete message
     """
     client_ip = websocket.client.host if websocket.client else "unknown"
     logger.info("Browser connected from {}", client_ip)
@@ -209,7 +216,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.close(5003)
             return
 
-        # Bidirectional message proxy
+        # Bidirectional message proxy with streaming support
         async def proxy_to_agent():
             """Forward messages from browser to agent."""
             try:
@@ -239,14 +246,9 @@ async def websocket_endpoint(websocket: WebSocket):
             """Forward messages from agent to browser, with streaming support."""
             try:
                 async for data in agent_ws:
-                    parsed = json.loads(data)
-                    
-                    # If chunk, send immediately to browser (streaming)
-                    if parsed.get("type") == "chunk":
-                        await websocket.send_text(data)
-                    else:
-                        # Full message - send as-is
-                        await websocket.send_text(data)
+                    # Forward all streaming messages directly to browser
+                    # The frontend will handle rendering
+                    await websocket.send_text(data)
             except websockets.exceptions.ConnectionClosed:
                 logger.info("Agent disconnected")
             except Exception as e:

@@ -12,7 +12,7 @@
 
 - 🔐 **Secure** — API Key + HMAC + IP whitelist
 - 🌐 **Universal** — Works with any WebSocket agent (nanobot, openclaw, etc.)
-- 💬 **Real-time Chat** — WebSocket-based bidirectional messaging
+- 💬 **Real-time Streaming** — Responses appear word by word as AI generates
 - 📎 **File Upload** — Images, PDFs, documents
 - 🎨 **Modern UI** — Dark-themed, responsive design
 - 🔄 **Auto-reconnect** — Automatic reconnection on disconnect
