@@ -44,7 +44,6 @@ class ChatClient {
         this._streamingMessages = {}; // sender_id -> { element, content }
         
         // Upload state
-        this._uploadCallbacks = {}; // upload_id -> { resolve, reject }
         this._uploadingCount = 0;
 
         // Initialize
@@ -220,16 +219,6 @@ class ChatClient {
                     }
                     break;
 
-                case 'upload_success':
-                    // File uploaded successfully, resolve the callback
-                    this._handleUploadSuccess(msg);
-                    break;
-
-                case 'upload_error':
-                    // File upload failed, reject the callback
-                    this._handleUploadError(msg);
-                    break;
-
                 case 'error':
                     console.error('Server error:', msg.error);
                     // End any active streaming
@@ -359,100 +348,40 @@ class ChatClient {
         return 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
     
-    _handleUploadSuccess(msg) {
-        const callback = this._uploadCallbacks[msg.upload_id];
-        if (callback) {
-            callback.resolve(msg);
-            delete this._uploadCallbacks[msg.upload_id];
-        }
-    }
-    
-    _handleUploadError(msg) {
-        const callback = this._uploadCallbacks[msg.upload_id];
-        if (callback) {
-            callback.reject(new Error(msg.error || 'Upload failed'));
-            delete this._uploadCallbacks[msg.upload_id];
-        }
-    }
+    // ========== Upload Methods (HTTP) ==========
     
     /**
-     * Upload files to nanobot via WebSocket
+     * Upload files to nanobot via HTTP
+     * Files are saved to ~/.nanobot/media/webbridge/
      * Returns array of { name, path, type } for each uploaded file
      */
     async uploadFilesToNanobot(files) {
+        // Use HTTP upload (WebSocket upload is not working reliably)
         const results = [];
         
         for (const file of files) {
-            try {
-                const result = await this._uploadSingleFileWebSocket(file);
-                results.push(result);
-            } catch (error) {
-                console.error('WebSocket upload failed, trying HTTP fallback:', error);
-                try {
-                    const result = await this._uploadSingleFileHTTP(file);
-                    results.push(result);
-                } catch (httpError) {
-                    console.error('HTTP upload also failed:', httpError);
-                    throw httpError;
-                }
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error('Upload failed: ' + response.status);
             }
+            
+            const result = await response.json();
+            results.push({
+                name: file.name,
+                path: result.files ? result.files[0] : '/uploads/' + file.name,
+                type: file.type,
+                size: file.size
+            });
         }
         
         return results;
-    }
-    
-    _uploadSingleFileWebSocket(file) {
-        return new Promise((resolve, reject) => {
-            const uploadId = this._generateUploadId();
-            
-            // Store callback for response
-            this._uploadCallbacks[uploadId] = { resolve, reject };
-            
-            // Read file as base64
-            const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                const base64 = e.target.result.split(',')[1];
-                
-                if (this.ws && this.connected) {
-                    this.ws.send(JSON.stringify({
-                        type: 'upload',
-                        upload_id: uploadId,
-                        name: file.name,
-                        type: file.type,
-                        size: file.size,
-                        data: base64
-                    }));
-                } else {
-                    reject(new Error('Not connected'));
-                }
-            };
-            
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(file);
-        });
-    }
-    
-    async _uploadSingleFileHTTP(file) {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!response.ok) {
-            throw new Error('Upload failed: ' + response.status);
-        }
-        
-        const result = await response.json();
-        return {
-            name: file.name,
-            path: result.files[0] || '/uploads/' + file.name,
-            type: file.type,
-            size: file.size
-        };
     }
 
     async sendMessage() {
