@@ -553,12 +553,12 @@ class ChatClient {
 
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        // Use marked to render markdown (for agent messages)
+        // Use marked to render markdown (for all messages)
         let processedContent;
-        if (sender === 'agent' && typeof marked !== 'undefined') {
+        if (typeof marked !== 'undefined') {
             processedContent = marked.parse(content || '');
         } else {
-            // For user messages, just escape HTML
+            // Fallback: escape HTML
             processedContent = this.escapeHtml(content || '');
         }
 
@@ -575,9 +575,9 @@ class ChatClient {
             }).join('');
         }
 
-        // Add copy button for agent messages
+        // Add copy button for all messages
         let copyBtn = '';
-        if (sender === 'agent' && content) {
+        if (content) {
             copyBtn = `<button class="copy-btn" onclick="window.chatClient.copyMessage(this)" title="Copy Markdown">📋</button>`;
         }
 
