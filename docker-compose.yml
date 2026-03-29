@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  agent-webbridge:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - AGENT_WS_URL=${AGENT_WS_URL:-ws://localhost:18791}
+      - API_KEY=${API_KEY}
+      - HMAC_SECRET=${HMAC_SECRET:-}
+      - AGENT_NAME=${AGENT_NAME:-Agent}
+    restart: unless-stopped

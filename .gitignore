@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+/var/log/
+
+# Environment
+.env
+
+# Uploads
+src/static/uploads/*
+!src/static/uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Docker
+.docker/
