@@ -310,7 +310,7 @@ async def upload_file(request: Request):
     files = []
 
     # Use absolute path from app directory
-    upload_dir = Path(__file__).parent / "static" / "uploads"
+    upload_dir = Path.home() / ".nanobot" / "media" / "webbridge"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     for field_name, file in form.items():
