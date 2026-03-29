@@ -3,6 +3,7 @@
 🌐 **Universal web frontend for AI agents** — Connect any agent (nanobot, openclaw) via WebSocket with a beautiful chat interface.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker Hub](https://img.shields.io/docker/v/r4deu51/webbridge-agent?label=docker)](https://hub.docker.com/r/r4deu51/webbridge-agent)
 [![PyPI Version](https://img.shields.io/pypi/v/nanobot-webbridge-plugin)](https://pypi.org/project/nanobot-webbridge-plugin/)
 
 ---
@@ -21,18 +22,15 @@
 
 ## Quick Start (5 minutes)
 
-### Prerequisites
+### Option 1: Docker (Recommended)
 
-- Python 3.10+
-- A running agent with WebBridge support (e.g., nanobot with `nanobot-webbridge-plugin`)
-
-### Step 1: Install the nanobot plugin
+#### Step 1: Install the nanobot plugin
 
 ```bash
 pip install nanobot-webbridge-plugin
 ```
 
-### Step 2: Configure nanobot
+#### Step 2: Configure nanobot
 
 Edit `~/.nanobot/config.json`:
 
@@ -55,31 +53,50 @@ Edit `~/.nanobot/config.json`:
 }
 ```
 
-### Step 3: Generate a secure API Key
+#### Step 3: Generate a secure API Key
 
 ```bash
-# Generate a 32-character random key
 openssl rand -hex 16
-
 # Example output: 4a7b9c2e1f3d8h6i0jklmnopqrstuvwx
 ```
 
-> ⚠️ **Important:** Use a unique API key for each deployment. Never share keys between different services.
-
-### Step 4: Restart nanobot
+#### Step 4: Restart nanobot
 
 ```bash
-# If using systemd
 systemctl --user restart nanobot
-
-# If using PM2
+# or
 pm2 restart nanobot
-
-# If running directly
-nanobot run
 ```
 
-### Step 5: Run agent-webbridge
+#### Step 5: Run with Docker
+
+```bash
+docker run -d \
+  --name webbridge-agent \
+  -p 8080:8080 \
+  -e API_KEY=sk_live_YOUR_UNIQUE_API_KEY \
+  -e AGENT_WS_URL=ws://localhost:18791 \
+  -e AGENT_NAME="My Agent" \
+  r4deu51/webbridge-agent:v0.0.1
+```
+
+Open **http://localhost:8080** in your browser.
+
+---
+
+### Option 2: Manual Installation (No Docker)
+
+#### Step 1: Install the nanobot plugin
+
+```bash
+pip install nanobot-webbridge-plugin
+```
+
+#### Step 2: Configure nanobot
+
+Same as Option 1, steps 2-4 above.
+
+#### Step 3: Clone and run
 
 ```bash
 git clone https://github.com/ramonpaolo/webbridge-agent.git
@@ -101,9 +118,7 @@ pip install -r requirements.txt
 uvicorn src.main:app --reload --port 8080
 ```
 
-### Step 6: Open in browser
-
-Go to **http://localhost:8080**
+Open **http://localhost:8080** in your browser.
 
 ---
 
@@ -115,9 +130,6 @@ Go to **http://localhost:8080**
 │   (Web Frontend)   │  wss    │   WebBridge Channel │  json    │                     │
 │   port 8080        │          │   port 18791        │          │                     │
 └─────────────────────┘          └─────────────────────┘          └─────────────────────┘
-         │                                                                              │
-         │  User's Browser (HTTPS recommended in production)                            │
-         └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -295,22 +307,11 @@ Messages with timestamps older than 5 minutes are rejected (replay attack protec
 | `PORT` | No | `8080` | HTTP server port |
 | `ALLOWED_ORIGINS` | No | `*` | CORS origins (comma-separated) |
 
-**Example .env:**
-
-```env
-API_KEY=sk_live_prod_key_123
-AGENT_WS_URL=ws://your-nanobot-server:18791
-HMAC_SECRET=super_secure_secret_123
-AGENT_NAME=Nanobot Assistant
-PORT=8080
-ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
-```
-
 ---
 
 ## Docker Deployment
 
-### Single Container
+### Docker Run
 
 ```bash
 docker run -d \
@@ -320,10 +321,10 @@ docker run -d \
   -e AGENT_WS_URL=ws://nanobot:18791 \
   -e HMAC_SECRET=your_secret \
   -e AGENT_NAME="Production Bot" \
-  ramonpaolo/webbridge-agent
+  r4deu51/webbridge-agent:v0.0.1
 ```
 
-### Docker Compose (Complete Stack)
+### Docker Compose
 
 ```yaml
 version: '3.8'
@@ -334,11 +335,11 @@ services:
     volumes:
       - ./nanobot-config:/root/.nanobot
     ports:
-      - "18790:18790"  # Gateway API
+      - "18790:18790"
     command: nanobot run
 
   webbridge-agent:
-    image: ramonpaolo/webbridge-agent
+    image: r4deu51/webbridge-agent:v0.0.1
     ports:
       - "8080:8080"
     environment:
@@ -387,18 +388,18 @@ Browser                     agent-webbridge                    nanobot
    │───────────────────────────►│                               │
    │                             │                               │
    │  2. Send auth               │  3. Validate API key           │
-   │  {type: "auth",             │──────────────────────────────►│
+   │  {type: "auth",             │───────────────────────────────►│
    │   api_key: "..."}           │                               │
    │                             │                               │
    │  4. auth_success            │  5. Connect & auth            │
-   │◄───────────────────────────│──────────────────────────────►│
+   │◄───────────────────────────│───────────────────────────────►│
    │                             │                               │
    │  6. Send message            │  7. Forward message           │
-   │  {type: "message",          │──────────────────────────────►│
+   │  {type: "message",          │───────────────────────────────►│
    │   content: "..."}          │                               │
    │                             │                               │
    │                             │  8. Process & respond         │
-   │  9. Receive response       │◄──────────────────────────────│
+   │  9. Receive response        │◄──────────────────────────────│
    │◄───────────────────────────│                               │
 ```
 
@@ -443,14 +444,6 @@ Browser                     agent-webbridge                    nanobot
 }
 ```
 
-**Error:**
-```json
-{
-  "type": "error",
-  "error": "Unauthorized"
-}
-```
-
 ---
 
 ## Troubleshooting
@@ -459,10 +452,7 @@ Browser                     agent-webbridge                    nanobot
 
 1. **Check API key match:**
    ```bash
-   # In nanobot config.json
    grep api_key ~/.nanobot/config.json
-   
-   # In agent-webbridge .env
    grep API_KEY .env
    ```
    
@@ -481,15 +471,12 @@ Browser                     agent-webbridge                    nanobot
 3. **If using IP whitelist:**
    - Check your IP with: `curl ifconfig.me`
    - Verify it matches the configured IP exactly
-   - Remember: `null` means any IP is allowed
 
 ### "Connection refused" error
 
 1. **Verify nanobot is running:**
    ```bash
    systemctl --user status nanobot
-   # or
-   pm2 status nanobot
    ```
 
 2. **Check AGENT_WS_URL is correct:**
@@ -500,142 +487,14 @@ Browser                     agent-webbridge                    nanobot
 
 3. **Check firewall:**
    ```bash
-   # Allow port 18791
    sudo ufw allow 18791
-   ```
-
-### "Connection timeout" error
-
-1. **Check nanobot webbridge is enabled:**
-   ```json
-   "webbridge": {
-     "enabled": true  // Must be true
-   }
-   ```
-
-2. **Restart nanobot:**
-   ```bash
-   systemctl --user restart nanobot
    ```
 
 ### Frontend shows "Disconnected"
 
 1. Check browser console (F12) for errors
 2. Verify nanobot is running
-3. Try hard refresh: `Ctrl+Shift+R` (or `Cmd+Shift+R`)
-4. Check browser network tab for WebSocket connection status
-
-### Messages not being received by agent
-
-1. Check nanobot logs for message processing
-2. Verify agent is configured to respond
-3. Check if agent has valid API key for the LLM provider
-
----
-
-## Environment Examples
-
-### Development (Local)
-
-```env
-API_KEY=sk_live_dev_local_key
-AGENT_WS_URL=ws://localhost:18791
-HMAC_SECRET=
-AGENT_NAME=Local Dev Bot
-PORT=8080
-ALLOWED_ORIGINS=*
-```
-
-### Staging
-
-```env
-API_KEY=sk_live_staging_key
-AGENT_WS_URL=ws://staging-nanobot.internal:18791
-HMAC_SECRET=staging_hmac_secret
-AGENT_NAME=Staging Bot
-PORT=8080
-ALLOWED_ORIGINS=https://staging.yourdomain.com
-```
-
-### Production
-
-```env
-API_KEY=sk_live_prod_secure_key
-AGENT_WS_URL=ws://nanobot.internal:18791
-HMAC_SECRET=prod_secure_hmac_secret
-AGENT_NAME=Production Assistant
-PORT=8080
-ALLOWED_ORIGINS=https://app.yourdomain.com
-```
-
----
-
-## Development
-
-```bash
-# Clone the repository
-git clone https://github.com/ramonpaolo/agent-webbridge.git
-cd agent-webbridge
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install dev dependencies
-pip install -r requirements-dev.txt
-
-# Run in development mode
-uvicorn src.main:app --reload --port 8080 --log-level debug
-
-# Run tests
-pytest tests/ -v
-
-# Run specific test type
-pytest tests/unit/ -v
-pytest tests/integration/ -v
-pytest tests/security/ -v
-```
-
----
-
-## API Reference
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Web UI (HTML) |
-| GET | `/health` | Health check |
-| WS | `/ws` | WebSocket endpoint |
-| POST | `/upload` | File upload |
-
-### Health Check
-
-```bash
-curl http://localhost:8080/health
-```
-
-Response:
-```json
-{
-  "status": "ok",
-  "agent_connected": true,
-  "agent_name": "My Agent"
-}
-```
-
-### File Upload
-
-```bash
-curl -X POST http://localhost:8080/upload \
-  -F "file=@image.png"
-```
-
-Response:
-```json
-{
-  "files": ["/uploads/abc123.png"]
-}
-```
+3. Try hard refresh: `Ctrl+Shift+R`
 
 ---
 
