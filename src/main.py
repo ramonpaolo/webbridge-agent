@@ -273,7 +273,7 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.post("/upload")
 async def upload_file(request: Request):
     """
-    Handle file uploads.
+    Handle file uploads via HTTP (legacy - WebSocket upload preferred).
 
     Files are temporarily stored and their paths are returned
     to be sent as media attachments in messages.
@@ -281,7 +281,8 @@ async def upload_file(request: Request):
     form = await request.form()
     files = []
 
-    upload_dir = Path("static/uploads")
+    # Use absolute path from app directory
+    upload_dir = Path(__file__).parent / "static" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     for field_name, file in form.items():
