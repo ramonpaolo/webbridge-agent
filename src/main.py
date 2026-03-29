@@ -303,30 +303,44 @@ async def upload_file(request: Request):
     """
     Handle file uploads via HTTP (legacy - WebSocket upload preferred).
 
-    Files are temporarily stored and their paths are returned
-    to be sent as media attachments in messages.
+    Files are temporarily stored and returned to be sent as media attachments in messages.
     """
-    form = await request.form()
+    logger.info("Upload request received")
+    
+    try:
+        form = await request.form()
+        logger.info("Form fields: {}", list(form.fields()))
+    except Exception as e:
+        logger.error("Form parsing error: {}", e)
+        return {"error": str(e)}, 400
+    
     files = []
-
+    
     # Use absolute path from app directory
     upload_dir = Path.home() / ".nanobot" / "media" / "webbridge"
     upload_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Upload dir: {}", upload_dir)
 
     for field_name, file in form.items():
+        logger.info("Processing field: {}", field_name)
         if hasattr(file, "filename") and file.filename:
+            logger.info("Saving file: {}", file.filename)
             # Generate unique filename
             ext = Path(file.filename).suffix
             unique_name = f"{secrets.token_urlsafe(16)}{ext}"
             file_path = upload_dir / unique_name
-
+            
             # Save file
             content = await file.read()
             async with aiofiles.open(file_path, "wb") as f:
                 await f.write(content)
-
+            
+            logger.info("File saved: {}", file_path)
             files.append(f"/uploads/{unique_name}")
+        else:
+            logger.info("Skipping field (no filename): {}", field_name)
 
+    logger.info("Upload complete: {} files", len(files))
     return {"files": files}
 
 
