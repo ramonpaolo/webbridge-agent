@@ -202,6 +202,10 @@ class ChatClient {
                 case 'stream_start':
                     // Streaming begins - create placeholder message
                     this._startStreamingMessage(msg.chat_id || 'agent');
+                    // Show "Executing tools" after a delay (in case tool hints don't arrive)
+                    this._toolExecutingTimeout = setTimeout(() => {
+                        this._showToolExecuting();
+                    }, 2000);
                     break;
 
                 case 'chunk':
@@ -311,11 +315,18 @@ class ChatClient {
             return;
         }
         
-        // Use final content if provided, otherwise use accumulated content
-        const content = finalContent || stream.content;
-        
-        // Remove streaming class and cursor
-        const contentEl = stream.element.querySelector('.streaming-content');
+                    // Use final content if provided, otherwise use accumulated content
+                    const content = finalContent || stream.content;
+                    
+                    // Cancel tool executing timeout and hide indicator
+                    if (this._toolExecutingTimeout) {
+                        clearTimeout(this._toolExecutingTimeout);
+                        this._toolExecutingTimeout = null;
+                    }
+                    this._hideToolExecuting();
+                    
+                    // Remove streaming class and cursor
+                    const contentEl = stream.element.querySelector('.streaming-content');
         if (contentEl) {
             contentEl.classList.remove('streaming-content');
             contentEl.innerHTML = this.formatContent(content);
@@ -370,6 +381,29 @@ class ChatClient {
                 el.remove();
             }
         }, 5000);
+    }
+    
+    _showToolExecuting() {
+        // Show indicator when streaming + tools are being executed
+        // This is shown when we receive chunks but no tool hints (streaming mode)
+        const existing = document.getElementById('tool-executing');
+        if (existing) return; // Already showing
+        
+        const el = document.createElement('div');
+        el.id = 'tool-executing';
+        el.className = 'tool-hint';
+        el.innerHTML = `
+            <span class="tool-hint-icon">⚙️</span>
+            <span class="tool-hint-text">Executing tools...</span>
+        `;
+        
+        this.elements.messages.appendChild(el);
+        this.scrollToBottom();
+    }
+    
+    _hideToolExecuting() {
+        const el = document.getElementById('tool-executing');
+        if (el) el.remove();
     }
     
     escapeHtml(text) {
