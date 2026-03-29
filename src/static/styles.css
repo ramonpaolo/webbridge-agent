@@ -520,30 +520,6 @@ body {
     min-height: 24px;
 }
 
-/* Tool hint - shows when agent is using tools */
-.tool-hint {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    margin: 8px 0;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    color: var(--text-secondary);
-    border-left: 3px solid var(--accent);
-    animation: fadeIn 0.2s ease;
-}
-
-.tool-hint-icon {
-    font-size: 14px;
-}
-
-.tool-hint-text {
-    font-family: 'Fira Code', monospace;
-    color: var(--accent);
-}
-
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;

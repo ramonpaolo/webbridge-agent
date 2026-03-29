@@ -202,10 +202,6 @@ class ChatClient {
                 case 'stream_start':
                     // Streaming begins - create placeholder message
                     this._startStreamingMessage(msg.chat_id || 'agent');
-                    // Show "Executing tools" after a delay (in case tool hints don't arrive)
-                    this._toolExecutingTimeout = setTimeout(() => {
-                        this._showToolExecuting();
-                    }, 2000);
                     break;
 
                 case 'chunk':
@@ -222,11 +218,6 @@ class ChatClient {
                         // Non-streaming message
                         this.addMessage(msg.content, 'agent', msg.media);
                     }
-                    break;
-
-                case 'tool_hint':
-                    // Tool hint (e.g., "web_search("query")") being executed
-                    this._showToolHint(msg.content);
                     break;
 
                 case 'upload_success':
@@ -318,13 +309,6 @@ class ChatClient {
                     // Use final content if provided, otherwise use accumulated content
                     const content = finalContent || stream.content;
                     
-                    // Cancel tool executing timeout and hide indicator
-                    if (this._toolExecutingTimeout) {
-                        clearTimeout(this._toolExecutingTimeout);
-                        this._toolExecutingTimeout = null;
-                    }
-                    this._hideToolExecuting();
-                    
                     // Remove streaming class and cursor
                     const contentEl = stream.element.querySelector('.streaming-content');
         if (contentEl) {
@@ -355,61 +339,6 @@ class ChatClient {
         // Clean up
         delete this._streamingMessages[chatId];
         this.scrollToBottom();
-    }
-    
-    _showToolHint(hint) {
-        // Remove existing tool hint if any
-        const existingHint = document.getElementById('tool-hint');
-        if (existingHint) existingHint.remove();
-        
-        // Create tool hint element
-        const hintEl = document.createElement('div');
-        hintEl.id = 'tool-hint';
-        hintEl.className = 'tool-hint';
-        hintEl.innerHTML = `
-            <span class="tool-hint-icon">⚙️</span>
-            <span class="tool-hint-text">${this.escapeHtml(hint)}</span>
-        `;
-        
-        this.elements.messages.appendChild(hintEl);
-        this.scrollToBottom();
-        
-        // Auto-remove after 5 seconds if not updated
-        setTimeout(() => {
-            const el = document.getElementById('tool-hint');
-            if (el && el.querySelector('.tool-hint-text').textContent === hint) {
-                el.remove();
-            }
-        }, 5000);
-    }
-    
-    _showToolExecuting() {
-        // Show indicator when streaming + tools are being executed
-        // This is shown when we receive chunks but no tool hints (streaming mode)
-        const existing = document.getElementById('tool-executing');
-        if (existing) return; // Already showing
-        
-        const el = document.createElement('div');
-        el.id = 'tool-executing';
-        el.className = 'tool-hint';
-        el.innerHTML = `
-            <span class="tool-hint-icon">⚙️</span>
-            <span class="tool-hint-text">Executing tools...</span>
-        `;
-        
-        this.elements.messages.appendChild(el);
-        this.scrollToBottom();
-    }
-    
-    _hideToolExecuting() {
-        const el = document.getElementById('tool-executing');
-        if (el) el.remove();
-    }
-    
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     // ========== Upload Methods ==========
