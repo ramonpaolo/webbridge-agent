@@ -386,12 +386,20 @@ class ChatClient {
 
     async sendMessage() {
         const content = this.elements.messageInput.value.trim();
+        console.log('sendMessage called', { content, pendingFiles: this.pendingFiles.length, connected: this.connected });
         
-        if (!content && this.pendingFiles.length === 0) return;
-        if (!this.connected) return;
+        if (!content && this.pendingFiles.length === 0) {
+            console.log('Nothing to send');
+            return;
+        }
+        if (!this.connected) {
+            console.log('Not connected');
+            return;
+        }
 
         // Disable send button during upload
         this._uploadingCount = this.pendingFiles.length;
+        console.log('Uploading files:', this.pendingFiles.length);
         this.updateSendButton();
         
         // Show typing indicator if we have files
@@ -451,10 +459,16 @@ class ChatClient {
     }
 
     handleFileSelect(event) {
+        console.log('handleFileSelect called', event.target.files);
         const files = Array.from(event.target.files);
-        if (files.length === 0) return;
+        console.log('Files selected:', files.length, files);
+        if (files.length === 0) {
+            console.log('No files selected');
+            return;
+        }
 
         this.pendingFiles = files;
+        console.log('pendingFiles updated:', this.pendingFiles);
         this.showFilePreview();
         this.updateSendButton();
     }
