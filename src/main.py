@@ -39,7 +39,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Load environment
-AGENT_WS_URL = os.getenv("AGENT_WS_URL", "ws://localhost:18791")
+AGENT_WS_URL = os.getenv("AGENT_WS_URL", "ws://nanobot:18791")
 API_KEY = os.getenv("API_KEY", "")
 HMAC_SECRET = os.getenv("HMAC_SECRET", "")
 AGENT_NAME = os.getenv("AGENT_NAME", "Agent")
