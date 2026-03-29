@@ -236,10 +236,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     await agent_ws.close()
 
         async def proxy_to_browser():
-            """Forward messages from agent to browser."""
+            """Forward messages from agent to browser, with streaming support."""
             try:
                 async for data in agent_ws:
-                    await websocket.send_text(data)
+                    parsed = json.loads(data)
+                    
+                    # If chunk, send immediately to browser (streaming)
+                    if parsed.get("type") == "chunk":
+                        await websocket.send_text(data)
+                    else:
+                        # Full message - send as-is
+                        await websocket.send_text(data)
             except websockets.exceptions.ConnectionClosed:
                 logger.info("Agent disconnected")
             except Exception as e:
