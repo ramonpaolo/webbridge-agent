@@ -267,6 +267,7 @@ class ChatClient {
                 <span class="message-avatar">🤖</span>
                 <span>${this.agentName}</span>
                 <span class="streaming-indicator">●</span>
+                <button class="copy-btn" onclick="window.chatClient.copyMessage(this)" title="Copy Markdown">📋</button>
             </div>
             <div class="message-content streaming-content"></div>
             <div class="message-time">${time}</div>
@@ -287,10 +288,14 @@ class ChatClient {
         
         stream.content += chunk;
         
-        // Update the content element
+        // Update the content element with markdown rendering
         const contentEl = stream.element.querySelector('.streaming-content');
         if (contentEl) {
-            contentEl.innerHTML = this.formatContent(stream.content) + '<span class="cursor">▊</span>';
+            if (typeof marked !== 'undefined') {
+                contentEl.innerHTML = marked.parse(stream.content) + '<span class="cursor">▊</span>';
+            } else {
+                contentEl.textContent = stream.content + '▊';
+            }
         }
         
         this.scrollToBottom();
@@ -313,7 +318,14 @@ class ChatClient {
                     const contentEl = stream.element.querySelector('.streaming-content');
         if (contentEl) {
             contentEl.classList.remove('streaming-content');
-            contentEl.innerHTML = this.formatContent(content);
+            // Use marked for markdown rendering
+            if (typeof marked !== 'undefined') {
+                contentEl.innerHTML = marked.parse(content || '');
+            } else {
+                contentEl.textContent = content || '';
+            }
+            // Store raw content for copy button
+            stream.element.dataset.rawContent = content;
         }
         
         // Remove streaming indicator
@@ -535,14 +547,20 @@ class ChatClient {
         this.elements.fileInput.value = '';
     }
 
-    addMessage(content, sender, media = []) {
+    addMessage(content, sender, media = [], rawContent = null) {
         const messageEl = document.createElement('div');
         messageEl.className = `message ${sender}`;
 
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        // Process content for code blocks
-        const processedContent = this.formatContent(content);
+        // Use marked to render markdown (for agent messages)
+        let processedContent;
+        if (sender === 'agent' && typeof marked !== 'undefined') {
+            processedContent = marked.parse(content || '');
+        } else {
+            // For user messages, just escape HTML
+            processedContent = this.escapeHtml(content || '');
+        }
 
         let mediaHtml = '';
         if (media && media.length > 0) {
@@ -557,44 +575,50 @@ class ChatClient {
             }).join('');
         }
 
+        // Add copy button for agent messages
+        let copyBtn = '';
+        if (sender === 'agent' && content) {
+            copyBtn = `<button class="copy-btn" onclick="window.chatClient.copyMessage(this)" title="Copy Markdown">📋</button>`;
+        }
+
         messageEl.innerHTML = `
             <div class="message-header">
                 <span class="message-avatar">${sender === 'user' ? '👤' : '🤖'}</span>
                 <span>${sender === 'user' ? 'You' : this.agentName}</span>
+                ${copyBtn}
             </div>
             <div class="message-content">${processedContent}${mediaHtml ? '<br>' + mediaHtml : ''}</div>
             <div class="message-time">${time}</div>
         `;
 
+        // Store raw markdown content for copying
+        if (sender === 'agent' && content) {
+            messageEl.dataset.rawContent = content;
+        }
+
         this.elements.messages.appendChild(messageEl);
         this.scrollToBottom();
     }
 
-    formatContent(content) {
-        // Escape HTML
-        let formatted = content
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        // Code blocks
-        formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-            return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+    copyMessage(btn) {
+        const messageEl = btn.closest('.message');
+        const rawContent = messageEl.dataset.rawContent || messageEl.querySelector('.message-content').textContent;
+        
+        navigator.clipboard.writeText(rawContent).then(() => {
+            // Show copied feedback
+            btn.textContent = '✅';
+            setTimeout(() => {
+                btn.textContent = '📋';
+            }, 1500);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
         });
+    }
 
-        // Inline code
-        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-        // Bold
-        formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-        // Italic
-        formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-        // Line breaks
-        formatted = formatted.replace(/\n/g, '<br>');
-
-        return formatted;
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     scrollToBottom() {
