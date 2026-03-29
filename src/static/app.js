@@ -1,14 +1,16 @@
 /**
- * agent-webbridge — Chat Client with Streaming Support
+ * agent-webbridge — Chat Client
+ * 
+ * Handles WebSocket connection to the agent and UI interactions.
  */
 
 class ChatClient {
     constructor() {
+        // DOM Elements
         this.elements = {
             status: document.getElementById('connection-status'),
             statusText: document.querySelector('.status-text'),
             agentName: document.getElementById('agent-name'),
-            agentNameSidebar: document.getElementById('agent-name-sidebar'),
             chatContainer: document.getElementById('chat-container'),
             messages: document.getElementById('messages'),
             welcome: document.getElementById('welcome-message'),
@@ -24,26 +26,26 @@ class ChatClient {
             apiKeyInput: document.getElementById('api-key-input'),
             agentNameInput: document.getElementById('agent-name-input'),
             wsUrlInput: document.getElementById('ws-url-input'),
-            sidebar: document.getElementById('sidebar'),
-            menuBtn: document.getElementById('menu-btn'),
         };
 
+        // State
         this.ws = null;
         this.connected = false;
         this.apiKey = '';
         this.wsUrl = '';
         this.agentName = 'Agent';
         this.pendingFiles = [];
+        this.messageQueue = [];
         this.sessionId = null;
-        this.chats = [{ id: 'default', messages: [], name: 'New Chat' }];
-        this.currentChatId = 'default';
 
+        // Initialize
         this.bindEvents();
         this.loadSettings();
         this.autoConnect();
     }
 
     bindEvents() {
+        // Send message
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
         this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -53,21 +55,17 @@ class ChatClient {
         });
         this.elements.messageInput.addEventListener('input', () => this.updateSendButton());
 
+        // File attachment
         this.elements.attachBtn.addEventListener('click', () => this.elements.fileInput.click());
         this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
+        // Settings
         this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
         this.elements.closeSettings.addEventListener('click', () => this.closeSettings());
         this.elements.settingsModal.addEventListener('click', (e) => {
             if (e.target === this.elements.settingsModal) this.closeSettings();
         });
         this.elements.connectBtn.addEventListener('click', () => this.handleConnect());
-
-        this.elements.menuBtn?.addEventListener('click', () => this.toggleSidebar());
-    }
-
-    toggleSidebar() {
-        this.elements.sidebar?.classList.toggle('open');
     }
 
     loadSettings() {
@@ -79,7 +77,6 @@ class ChatClient {
         this.elements.wsUrlInput.value = this.wsUrl;
         this.elements.agentNameInput.value = this.agentName;
         this.elements.agentName.textContent = this.agentName;
-        this.elements.agentNameSidebar.textContent = this.agentName;
     }
 
     saveSettings() {
@@ -103,7 +100,6 @@ class ChatClient {
 
         this.saveSettings();
         this.elements.agentName.textContent = this.agentName;
-        this.elements.agentNameSidebar.textContent = this.agentName;
         this.closeSettings();
 
         if (this.apiKey) {
@@ -138,6 +134,8 @@ class ChatClient {
             this.ws = new WebSocket(this.wsUrl);
 
             this.ws.onopen = () => {
+                console.log('WebSocket connected');
+                // Send auth
                 this.ws.send(JSON.stringify({
                     type: 'auth',
                     api_key: this.apiKey
@@ -149,20 +147,24 @@ class ChatClient {
             };
 
             this.ws.onclose = (event) => {
+                console.log('WebSocket closed', event.code, event.reason);
                 this.connected = false;
                 this.setStatus('disconnected', 'Disconnected');
                 this.updateSendButton();
 
+                // Auto-reconnect after 3 seconds
                 if (this.apiKey) {
                     setTimeout(() => this.connect(), 3000);
                 }
             };
 
             this.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
                 this.setStatus('disconnected', 'Connection error');
             };
 
         } catch (error) {
+            console.error('Failed to connect:', error);
             this.setStatus('disconnected', 'Failed to connect');
         }
     }
@@ -170,6 +172,7 @@ class ChatClient {
     handleMessage(data) {
         try {
             const msg = JSON.parse(data);
+            console.log('Received:', msg);
 
             switch (msg.type) {
                 case 'auth_success':
@@ -181,20 +184,20 @@ class ChatClient {
                     break;
 
                 case 'message':
-                    // Streaming: if we have partial content, append
-                    if (msg.streaming) {
-                        this.appendToLastMessage(msg.content);
-                    } else {
-                        this.addMessage(msg.content, 'agent', msg.media);
-                    }
+                    this.addMessage(msg.content, 'agent', msg.media);
                     break;
 
                 case 'error':
+                    console.error('Server error:', msg.error);
                     this.addMessage(`Error: ${msg.error}`, 'agent');
                     break;
 
                 case 'pong':
+                    // Keepalive response, ignore
                     break;
+
+                default:
+                    console.log('Unknown message type:', msg.type);
             }
         } catch (error) {
             console.error('Failed to parse message:', error);
@@ -207,32 +210,35 @@ class ChatClient {
         if (!content && this.pendingFiles.length === 0) return;
         if (!this.connected) return;
 
+        // Handle file uploads first if any
         let media = [];
         if (this.pendingFiles.length > 0) {
             media = await this.uploadFiles();
         }
 
+        // Build message
         const message = {
             type: 'message',
             content: content,
-            sender_id: this.apiKey.slice(0, 16),
+            sender_id: this.apiKey, // Use full API key as sender ID
             media: media,
-            metadata: { timestamp: Date.now() }
+            metadata: {
+                timestamp: Date.now()
+            }
         };
 
-        // Add to chat immediately (optimistic UI)
+        // Add to chat
         this.addMessage(content, 'user', media);
 
+        // Clear input
         this.elements.messageInput.value = '';
         this.clearFilePreview();
         this.updateSendButton();
 
+        // Send via WebSocket
         if (this.ws && this.connected) {
             this.ws.send(JSON.stringify(message));
         }
-
-        // Show typing indicator (will be replaced when response comes)
-        this.showTyping();
     }
 
     async uploadFiles() {
@@ -283,7 +289,7 @@ class ChatClient {
                 img.src = URL.createObjectURL(file);
                 fileItem.appendChild(img);
             } else {
-                fileItem.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted);">${file.name}</div>`;
+                fileItem.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--text-muted);">${file.name}</div>`;
             }
 
             const removeBtn = document.createElement('button');
@@ -314,14 +320,12 @@ class ChatClient {
     }
 
     addMessage(content, sender, media = []) {
-        // Remove typing indicator if exists
-        this.hideTyping();
-
         const messageEl = document.createElement('div');
         messageEl.className = `message ${sender}`;
 
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+        // Process content for code blocks
         const processedContent = this.formatContent(content);
 
         let mediaHtml = '';
@@ -347,32 +351,28 @@ class ChatClient {
         this.scrollToBottom();
     }
 
-    appendToLastMessage(content) {
-        const messages = this.elements.messages.querySelectorAll('.message.agent');
-        const lastMessage = messages[messages.length - 1];
-        
-        if (lastMessage) {
-            const contentEl = lastMessage.querySelector('.message-content');
-            if (contentEl) {
-                contentEl.textContent += content;
-                this.scrollToBottom();
-            }
-        }
-    }
-
     formatContent(content) {
+        // Escape HTML
         let formatted = content
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
 
+        // Code blocks
         formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
             return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
         });
 
+        // Inline code
         formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Bold
         formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        // Italic
         formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+        // Line breaks
         formatted = formatted.replace(/\n/g, '<br>');
 
         return formatted;
@@ -383,10 +383,8 @@ class ChatClient {
     }
 
     showTyping() {
-        if (document.getElementById('typing-indicator')) return;
-
         const typing = document.createElement('div');
-        typing.className = 'message agent';
+        typing.className = 'message agent typing';
         typing.id = 'typing-indicator';
         typing.innerHTML = `
             <div class="message-header">
@@ -411,6 +409,7 @@ class ChatClient {
     }
 }
 
+// Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
     window.chatClient = new ChatClient();
 });
