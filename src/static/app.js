@@ -565,11 +565,18 @@ class ChatClient {
         let mediaHtml = '';
         if (media && media.length > 0) {
             mediaHtml = media.map(m => {
-                if (typeof m === 'string' && m.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                    return `<img src="${m}" alt="attachment">`;
-                }
                 if (typeof m === 'string') {
-                    return `<a href="${m}" target="_blank">📎 ${m.split('/').pop()}</a>`;
+                    // If it's a local nanobot path, serve via /media/ endpoint
+                    let src = m;
+                    if (m.includes('/.nanobot/media/webbridge/') || m.includes('/home/')) {
+                        const filename = m.split('/').pop();
+                        src = `/media/${filename}`;
+                    }
+                    
+                    if (m.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                        return `<img src="${src}" alt="attachment">`;
+                    }
+                    return `<a href="${src}" target="_blank">📎 ${m.split('/').pop()}</a>`;
                 }
                 return '';
             }).join('');

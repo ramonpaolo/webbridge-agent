@@ -270,6 +270,29 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info("Session {} closed", session_id or "unknown")
 
 
+@app.get("/media/{path:path}")
+async def serve_media(path: str):
+    """
+    Serve media files from nanobot's media directory.
+    
+    Files uploaded via WebSocket are saved to ~/.nanobot/media/webbridge/
+    and can be accessed via this endpoint.
+    """
+    # Get nanobot's media directory
+    home = Path.home()
+    media_dir = home / ".nanobot" / "media" / "webbridge"
+    
+    # Security: prevent directory traversal
+    safe_path = (media_dir / path).resolve()
+    if not str(safe_path).startswith(str(media_dir)):
+        return {"error": "Invalid path"}, 403
+    
+    if not safe_path.exists():
+        return {"error": "File not found"}, 404
+    
+    return FileResponse(safe_path)
+
+
 @app.post("/upload")
 async def upload_file(request: Request):
     """
