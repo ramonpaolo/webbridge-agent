@@ -26,13 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel
 
-# Configure logging
-logger.add(
-    "/var/log/agent-webbridge/app.log",
-    rotation="10 MB",
-    retention="7 days",
-    level="INFO",
-)
+# Note: Logging goes to stderr by default (container-compatible)
 
 # Load environment from .env file
 from dotenv import load_dotenv
