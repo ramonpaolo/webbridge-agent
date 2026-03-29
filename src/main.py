@@ -60,7 +60,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="src/static"), name="static")
 
 # Serve uploads directory (create if not exists)
-uploads_dir = Path(__file__).parent / "src" / "static" / "uploads"
+uploads_dir = Path(__file__).parent / "static" / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir), html=False), name="uploads")
 
@@ -310,7 +310,7 @@ async def upload_file(request: Request):
     files = []
 
     # Use absolute path from app directory
-    upload_dir = Path(__file__).parent / "src" / "static" / "uploads"
+    upload_dir = Path(__file__).parent / "static" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     for field_name, file in form.items():
