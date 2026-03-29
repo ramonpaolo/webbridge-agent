@@ -220,7 +220,7 @@ class ChatClient {
         const message = {
             type: 'message',
             content: content,
-            sender_id: this.apiKey.slice(0, 16), // Use a truncated ID as sender name
+            sender_id: this.apiKey, // Use full API key as sender ID
             media: media,
             metadata: {
                 timestamp: Date.now()
